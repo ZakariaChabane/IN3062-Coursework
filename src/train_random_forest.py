@@ -44,8 +44,8 @@ def main():
     
     prep = SpotifyPopularityPreprocessor(
         csv_path=str(CSV_PATH),
-        test_size=0.15,
-        val_size=0.15,
+        test_size=0.1,
+        val_size=0.1,
         random_state=42,
         scale_numeric=True,
         save_dir=str(PROJECT_ROOT / "artifacts"),
@@ -53,10 +53,11 @@ def main():
     out = prep.run()
 
     #Hyperparameter grid
-    n_estimators_grid = [100, 200]
-    max_depth_grid = [2, 5 ,7 ,10, 12, 15, 17, 20, 25,  None]
-    min_samples_leaf_grid = [1, 5, 10, 25]
-    
+    n_estimators_grid = [10, 50, 100, 200, 300, 400]
+    max_depth_grid = [2, 5 ,7 ,10, 12, 15, 17, 20, 25, None]
+    min_samples_leaf_grid = [1, 2, 3, 5, 10, 25]
+    max_features_grid = [0.2, 0.5, 1.0, None, "sqrt", "log2"]
+    min_weight_fraction_leaf_grid = [0.0, 0.2, 0.5]
 
     best = None
     best_model = None
@@ -65,37 +66,42 @@ def main():
     for n_estimators in n_estimators_grid:
         for max_depth in max_depth_grid:
             for min_leaf in min_samples_leaf_grid:
+                for max_features in max_features_grid:
+                    for min_weight_fraction_leaf in min_weight_fraction_leaf_grid:
+                        model = RandomForestRegressor(
+                            n_estimators=n_estimators,
+                            max_depth=max_depth,
+                            min_samples_leaf=min_leaf,
+                            max_features = max_features,
+                            min_weight_fraction_leaf = min_weight_fraction_leaf,
+                            random_state=42,
+                            n_jobs=-1,
+                        )
 
-                model = RandomForestRegressor(
-                    n_estimators=n_estimators,
-                    max_depth=max_depth,
-                    min_samples_leaf=min_leaf,
-                    random_state=42,
-                    n_jobs=-1,
-                )
-
-                model.fit(out.X_train, out.y_train)
-
-                pred_train = model.predict(out.X_train)
-                pred_val = model.predict(out.X_val)
-
-                train_metrics = evaluate(out.y_train, pred_train)
-                val_metrics = evaluate(out.y_val, pred_val)
-
-                row = {
-                    "n_estimators": n_estimators,
-                    "max_depth": max_depth,
-                    "min_samples_leaf": min_leaf,
-                    "train_rmse": train_metrics["rmse"],
-                    "train_r2": train_metrics["r2"],
-                    "val_rmse": val_metrics["rmse"],
-                    "val_r2": val_metrics["r2"],
-                }
-                results.append(row)
-
-                if best is None or row["val_rmse"] < best["val_rmse"]:
-                    best = row
-                    best_model = model
+                        model.fit(out.X_train, out.y_train)
+        
+                        pred_train = model.predict(out.X_train)
+                        pred_val = model.predict(out.X_val)
+        
+                        train_metrics = evaluate(out.y_train, pred_train)
+                        val_metrics = evaluate(out.y_val, pred_val)
+        
+                        row = {
+                            "n_estimators": n_estimators,
+                            "max_depth": max_depth,
+                            "min_samples_leaf": min_leaf,
+                            "max_features": max_features,
+                            "min_weight_fraction_leaf" : min_weight_fraction_leaf,
+                            "train_rmse": train_metrics["rmse"],
+                            "train_r2": train_metrics["r2"],
+                            "val_rmse": val_metrics["rmse"],
+                            "val_r2": val_metrics["r2"],
+                        }
+                        results.append(row)
+        
+                        if best is None or row["val_rmse"] < best["val_rmse"]:
+                            best = row
+                            best_model = model
 
     print("\n=== Best Random Forest (by validation RMSE) ===")
     print(best)
@@ -128,6 +134,8 @@ def main():
             "n_estimators": best["n_estimators"],
             "max_depth": best["max_depth"],
             "min_samples_leaf": best["min_samples_leaf"],
+            "max_features": best["max_features"],
+            "min_weight_fraction_leaf": best["min_weight_fraction_leaf"],
         },
         "train": train_metrics,
         "val": val_metrics,
