@@ -8,13 +8,15 @@ Created on Tue Dec 14 18:02:37 2025
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.linear_model import RidgeCV
+
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+from sklearn.linear_model import RidgeCV
 
 from src.preprocessing import SpotifyPopularityPreprocessor
 
@@ -53,12 +55,17 @@ def main():
 
     out = prep.run()
 
-    # Train Ridge Regression (regularized linear model) with CV
+    # Train Ridge Regression + simple non-linear interaction features
     alphas = np.logspace(-3, 3, 25)  # 0.001 -> 1000
-    model = RidgeCV(alphas=alphas)
+    model = make_pipeline(
+        PolynomialFeatures(degree=2, interaction_only=True, include_bias=False),
+        RidgeCV(alphas=alphas),
+    )
     model.fit(out.X_train, out.y_train)
 
-    print("\nBest Ridge alpha:", float(model.alpha_))
+    best_alpha = float(model.named_steps["ridgecv"].alpha_)
+    print("\nBest Ridge alpha:", best_alpha)
+    print("Using PolynomialFeatures: degree=2, interaction_only=True")
 
     # Predict
     pred_train = model.predict(out.X_train)
@@ -76,7 +83,7 @@ def main():
     metrics.update(evaluate_split("val", out.y_val, pred_val))
     metrics.update(evaluate_split("test", out.y_test, pred_test))
 
-    print("\n=== Ridge Regression Results ===")
+    print("\n=== Ridge Regression Results (with interactions) ===")
     print(f"Train RMSE: {metrics['train_rmse']:.4f} | Train R²: {metrics['train_r2']:.4f}")
     print(f"Val   RMSE: {metrics['val_rmse']:.4f} | Val   R²: {metrics['val_r2']:.4f}")
     print(f"Test  RMSE: {metrics['test_rmse']:.4f} | Test  R²: {metrics['test_r2']:.4f}")
@@ -105,7 +112,7 @@ def main():
     plt.scatter(out.y_test, pred_test, s=8)
     plt.xlabel("Actual Popularity")
     plt.ylabel("Predicted Popularity")
-    plt.title("Ridge Regression: Actual vs Predicted (Test Set)")
+    plt.title("Ridge + Interactions: Actual vs Predicted (Test Set)")
     plt.tight_layout()
     plt.savefig(figures_dir / "lr_actual_vs_pred_test.png", dpi=300)
     if SHOW_PLOTS:
@@ -119,20 +126,14 @@ def main():
     plt.axhline(0)
     plt.xlabel("Predicted Popularity")
     plt.ylabel("Residual (Actual - Predicted)")
-    plt.title("Ridge Regression: Residuals vs Predicted (Test Set)")
+    plt.title("Ridge + Interactions: Residuals vs Predicted (Test Set)")
     plt.tight_layout()
     plt.savefig(figures_dir / "lr_residuals_test.png", dpi=300)
     if SHOW_PLOTS:
         plt.show()
     plt.close()
 
-    # Show top coefficients
-    if out.feature_names and len(out.feature_names) == model.coef_.shape[0]:
-        coef = model.coef_
-        idx = np.argsort(np.abs(coef))[::-1][:15]
-        print("\nTop 15 coefficients by absolute value:")
-        for i in idx:
-            print(f"{out.feature_names[i]:<25} {coef[i]: .5f}")
+    print("\n(Note: Top coefficients skipped because PolynomialFeatures expands the feature set.)")
 
     # Save trained model
     try:
